@@ -1,0 +1,287 @@
+---
+title: "Coronavirus Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+    theme: readable
+runtime: shiny
+---
+
+```{r setup, include=FALSE, echo=FALSE, warning=FALSE}
+library(flexdashboard)
+library(leaflet)
+library(rgdal)
+library(readr)
+library(dplyr)
+library(sf)
+library(ggplot2)
+library(tmap)
+library(BatchGetSymbols)
+library(quantmod)
+library(plotly)
+library(rtweet)
+```
+
+Inputs {.sidebar}
+-------------------------------------
+
+```{r}
+radioButtons("rangeornot", "Date Range or To Date:",
+               c("Date Range", "To Date"))
+conditionalPanel(
+  condition = "input.rangeornot == 'Date Range'",
+  dateRangeInput("daterange", "Date Range:", format = "mm/dd/yy", start = "2020-01-22")
+)
+conditionalPanel(
+  condition = "input.rangeornot == 'To Date'",
+  dateInput("todate", "To Date:", format = "mm/dd/yy")
+)
+
+radioButtons("casesordeaths", "Display Cases or Deaths:",
+             c("Cases", "Deaths"))
+
+conditionalPanel(
+  condition = "input.casesordeaths == 'Cases'",
+  radioButtons("totalorpercent", "Display Totals or Percentages:",
+             c("Total", "Percentage of Population"), selected = "Total")
+)
+
+conditionalPanel(
+  condition = "input.casesordeaths == 'Deaths'",
+  radioButtons("totalorpercentofcases", "Display Totals or Percentages:",
+             c("Total", "Percentage of Cases", "Percentage of Population"), selected = "Total")
+)
+
+checkboxGroupInput("stockindex", "Indices to show:",
+                   c("S&P 500" = "^GSPC",
+                     "NASDAQ" = "^IXIC",
+                     "DJIA" = "^DJI",
+                     "FTSE 100" = "^FTSE",
+                     "Nikkei 225" = "^N225",
+                     "Shenzhen" = "^SZSC1"), selected = "^GSPC")
+
+textInput("searchterm", "Search for terms related to coronavirus on Twitter:", value = "#coronavirus", placeholder = "#coronavirus")
+
+actionButton("searchbutton", "Search")
+
+```
+
+Row 
+-----------------------------------------------------------------------
+
+### ABOUT
+
+The coronavirus pandemic caused by the severe acute respiratory syndrome coronavirus 2 (SARS-CoV-2), previously referred to as the 2019 novel coronavirus (2019-nCoV), has had dramatic effects on multiple scales. Epidemiologically, economically and culturally, the pandemic is quickly reshaping the lives of every individual on Earth.
+
+This dashboard hopes to just share a part of what those changes look like, not only from a health perspective, but from an economic and a cultural perspective as well.
+
+Directly below, there is an interactive map. Using the various inputs to the far left of the page, you can tune the parameters that will be displayed. Perhaps the most shocking visualization possible is to plot Deaths as a percentage of Cases. This shows very distinctly the effect quality healthcare access has on survival rates, particularly in lesser developed countries such as Sudan.
+
+The data for the cases and deaths comes from JHU CSSE, which is linked below. It is updated from that source every time this dashboard is opened. If you encounter any errors on plotting the maps, it is most likely that you have selected an invalid date or date range. The earliest data for cases and deaths comes from January, 22 2020, and often the data for the current day has not been updated yet on the side of JHU CSSE.
+
+JHU CSSE data: https://github.com/CSSEGISandData/COVID-19
+
+The map visualizations are made using the 'tmap' package using shape data from: https://www.naturalearthdata.com/downloads/50m-cultural-vectors/50m-admin-0-countries-2/
+
+Below, there are plots of both various global financial market indices and tweet frequencies. 
+
+The global economy has taken a nosedive in recent week as panic revolving around supply-chain disruptions and employment uncertainty has risen. Many economists predict that the economic impact of this pandemic will last far longer than the particular health impacts. The daily closing prices of six of the world's most significant market indices can be displayed all together, or individually to visualize this market decline. 
+
+The financial data is taken from Yahoo! Finance using the 'BatchGetSymbols' package, and is updated every time this dashboard is opened.
+
+The Twitter Activity plot displays the sum total of all tweets containing the term or phrase you search over time. It is set to find the most recent 1000 tweets containing your search term. With the rapidly evolving nature of the global pandemic, 1000 tweets containing a term such as '#coronavirus' may only span a few minutes. Due to Twitter's API rules, only 18,000 tweets can be searched within a 15-minute window. If there is an error displayed instead of a plot, it is likely that that limit has been reached. Waiting several minutes before searching a new phrase should resolve this issue. 
+
+The data is scraped from Twitter using the 'rtweet' package and is updated every time a new search is made.
+
+Row 
+-----------------------------------------------------------------------
+
+### MAP
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+renderLeaflet({
+  covid_cases <- read_csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_19-covid-Confirmed.csv")
+  covid_deaths <- read_csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_19-covid-Deaths.csv")
+  
+  covid_cases$`Country/Region`[covid_cases$`Country/Region` == "Bahamas, The"] <- "The Bahamas"
+  covid_cases$`Country/Region`[covid_cases$`Country/Region` == "Cape Verde"] <- "Cabo Verde"
+  covid_cases$`Country/Region`[covid_cases$`Country/Region` == "Congo (Brazzaville)"] <- "Republic of the Congo"
+  covid_cases$`Country/Region`[covid_cases$`Country/Region` == "Congo (Kinshasa)"] <- "Democratic Republic of the Congo"
+  covid_cases$`Country/Region`[covid_cases$`Country/Region` == "Cote d'Ivoire"] <- "Ivory Coast"
+  covid_cases$`Country/Region`[covid_cases$`Country/Region` == "Eswatini"] <- "eSwatini"
+  covid_cases$`Country/Region`[covid_cases$`Country/Region` == "Gambia, The"] <- "Gambia"
+  covid_cases$`Country/Region`[covid_cases$`Country/Region` == "Korea, South"] <- "South Korea"
+  covid_cases$`Country/Region`[covid_cases$`Country/Region` == "North Macedonia"] <- "Macedonia"
+  covid_cases$`Country/Region`[covid_cases$`Country/Region` == "Serbia"] <- "Republic of Serbia"
+  covid_cases$`Country/Region`[covid_cases$`Country/Region` == "Taiwan*"] <- "Taiwan"
+  covid_cases$`Country/Region`[covid_cases$`Country/Region` == "Tanzania"] <- "United Republic of Tanzania"
+  covid_cases$`Country/Region`[covid_cases$`Country/Region` == "Timor-Leste"] <- "East Timor"
+  covid_cases$`Country/Region`[covid_cases$`Country/Region` == "US"] <- "United States of America"
+  
+  drops <- c("Province/State", "Lat", "Long")
+  cases_totals <- covid_cases[, !names(covid_cases) %in% drops]
+  
+  covid_deaths$`Country/Region`[covid_deaths$`Country/Region` == "Bahamas, The"] <- "The Bahamas"
+  covid_deaths$`Country/Region`[covid_deaths$`Country/Region` == "Cape Verde"] <- "Cabo Verde"
+  covid_deaths$`Country/Region`[covid_deaths$`Country/Region` == "Congo (Brazzaville)"] <- "Republic of the Congo"
+  covid_deaths$`Country/Region`[covid_deaths$`Country/Region` == "Congo (Kinshasa)"] <- "Democratic Republic of the Congo"
+  covid_deaths$`Country/Region`[covid_deaths$`Country/Region` == "Cote d'Ivoire"] <- "Ivory Coast"
+  covid_deaths$`Country/Region`[covid_deaths$`Country/Region` == "Eswatini"] <- "eSwatini"
+  covid_deaths$`Country/Region`[covid_deaths$`Country/Region` == "Gambia, The"] <- "Gambia"
+  covid_deaths$`Country/Region`[covid_deaths$`Country/Region` == "Korea, South"] <- "South Korea"
+  covid_deaths$`Country/Region`[covid_deaths$`Country/Region` == "North Macedonia"] <- "Macedonia"
+  covid_deaths$`Country/Region`[covid_deaths$`Country/Region` == "Serbia"] <- "Republic of Serbia"
+  covid_deaths$`Country/Region`[covid_deaths$`Country/Region` == "Taiwan*"] <- "Taiwan"
+  covid_deaths$`Country/Region`[covid_deaths$`Country/Region` == "Tanzania"] <- "United Republic of Tanzania"
+  covid_deaths$`Country/Region`[covid_deaths$`Country/Region` == "Timor-Leste"] <- "East Timor"
+  covid_deaths$`Country/Region`[covid_deaths$`Country/Region` == "US"] <- "United States of America"
+  
+  drops <- c("Province/State", "Lat", "Long")
+  deaths_totals <- covid_deaths[, !names(covid_deaths) %in% drops]
+  
+  cases_totals %>%
+    group_by(`Country/Region`) %>%
+    summarise_all(sum) %>% rename(
+      country_name = `Country/Region`) -> cases_totals
+  
+  deaths_totals %>%
+    group_by(`Country/Region`) %>%
+    summarise_all(sum) %>% rename(
+      country_name = `Country/Region`) -> deaths_totals
+  
+  # https://www.naturalearthdata.com/downloads/50m-cultural-vectors/50m-admin-0-countries-2/
+  
+  # countries <- st_read("data/ne_50m_admin_0_countries/ne_50m_admin_0_countries.shx", stringsAsFactors=FALSE, quiet=TRUE)
+  # save(countries, file="./shapeFile.RData")
+  load("shapeFile.RData")
+  countries %>% rename(
+    country_name = ADMIN
+  ) -> countries
+  
+  if(input$rangeornot == "Date Range"){
+  initial.date <- input$daterange[1]
+  initial.date <- gsub("0(\\d)", "\\1", format(initial.date, "%m/%d/%y"))
+  final.date <- input$daterange[2]
+  final.date <- gsub("0(\\d)", "\\1", format(final.date, "%m/%d/%y"))
+  deathCol <- deaths_totals[final.date] - deaths_totals[initial.date]
+  casesCol <- cases_totals[final.date] - cases_totals[initial.date]
+  names(deathCol) <- "Deaths"
+  names(casesCol) <- "Cases"
+  deaths_totals <- cbind(deaths_totals, deathCol)
+  cases_totals <- cbind(cases_totals, casesCol)
+  map_and_deaths <- left_join(countries, deaths_totals)
+  map_and_deaths$`Percent of Population` <- (map_and_deaths$`Deaths`/map_and_deaths$POP_EST) * 100
+  map_and_cases <- left_join(countries, cases_totals)
+  map_and_cases$`Percent of Population` <- (map_and_cases$`Cases`/map_and_cases$POP_EST) * 100
+  map_and_deaths$`Percent of Cases` <- (map_and_deaths$`Deaths`/map_and_cases$`Cases`) * 100
+  } else {
+  final.date <- input$todate
+  final.date <- gsub("0(\\d)", "\\1", format(final.date, "%m/%d/%y"))
+  deathCol <- deaths_totals[final.date]
+  casesCol <- cases_totals[final.date]
+  names(deathCol) <- "Deaths"
+  names(casesCol) <- "Cases"
+  deaths_totals <- cbind(deaths_totals, deathCol)
+  cases_totals <- cbind(cases_totals, casesCol)
+  map_and_deaths <- left_join(countries, deaths_totals)
+  map_and_deaths$`Percent of Population` <- (map_and_deaths$`Deaths`/map_and_deaths$POP_EST) * 100
+  map_and_cases <- left_join(countries, cases_totals)
+  map_and_cases$`Percent of Population` <- (map_and_cases$`Cases`/map_and_cases$POP_EST) * 100
+  map_and_deaths$`Percent of Cases` <- (map_and_deaths$`Deaths`/map_and_cases$`Cases`) * 100
+  }
+  
+  
+  if (input$casesordeaths == "Cases"){
+    if (input$totalorpercent == "Total"){
+      map <- tm_shape(map_and_cases) + tm_polygons("Cases", id="country_name")
+    } else {
+      map <- tm_shape(map_and_cases) + tm_polygons("Percent of Population", id="country_name")
+    }
+  } else {
+    if (input$totalorpercentofcases == "Total"){
+      map <- tm_shape(map_and_deaths) + tm_polygons("Deaths", id="country_name")
+    } else if (input$totalorpercentofcases == "Percentage of Population") {
+      map <- tm_shape(map_and_deaths) + tm_polygons("Percent of Population", id="country_name")
+    } else {
+      map <- tm_shape(map_and_deaths) + tm_polygons("Percent of Cases", id="country_name")
+    }
+  }
+  
+  tmap_leaflet(map)
+})
+
+
+```
+
+Row
+-----------------------------------------------------------------------
+
+### MARKET VOLATILITY
+
+```{r}
+renderPlotly({
+  if(input$rangeornot == "Date Range"){
+  first.date <- input$daterange[1]
+  last.date <- input$daterange[2]
+  } else {
+  first.date <- as.Date("2020-01-22", format="%Y-%m-%d")
+  last.date <- input$todate
+  }
+  freq.data <- 'daily'
+  tickers <- c('^GSPC','^FTSE', '^N225', '^DJI', '^IXIC', '^SZSC1')
+  l.out <- BatchGetSymbols(tickers = tickers,
+                         first.date = first.date,
+                         last.date = last.date,
+                         freq.data = freq.data
+                         )
+  selections <- input$stockindex
+  tickerdf <- subset(l.out$df.tickers, ticker == selections)
+  p <- ggplot(tickerdf, aes(x = ref.date, y = price.close, col=ticker)) + geom_line() + ylab("Closing Price") + xlab("Date") + scale_color_discrete(name="Index Symbol") + theme_dark()
+  p <- ggplotly(p)
+  p
+})
+
+```
+
+Row
+-----------------------------------------------------------------------
+
+### TWITTER ACTIVITY
+
+```{r}
+
+renderPlotly({
+  ## store api keys (these are fake example values; replace with your own keys)
+  api_key <- "GXt4TeUda3jHMN1F0PrjhZoo8"
+  api_secret_key <- "9PPe6AQsrQXXnvrRUTZlk0nSB4cGT0arrxr6McM6RRqtCjY1an"
+  access_token <- "1242207163138953216-lqqioYkVapHGRzeFbqZXXWhRfO7z69"
+  access_token_secret <- "E1naTSch4BbgXcNTMBJijTfqcrMDuWV5gJtyzx8SZkJ0q"
+
+  ## authenticate via web browser
+  token <- create_token(
+    app = "coronavirus-flexdashboard",
+    consumer_key = api_key,
+    consumer_secret = api_secret_key,
+    access_token = access_token,
+    access_secret = access_token_secret)
+
+  rt <- search_tweets(
+    input$searchterm, n = 1000, include_rts = FALSE, retryonratelimit = FALSE
+  )
+
+  rtnew <- rt['created_at']
+  rtnew$created_at <- as.character(rtnew$created_at)
+  rtnew$Count <- as.numeric(ave(rtnew$created_at, rtnew$created_at, FUN = length))
+  rtnew <- dplyr::distinct(rtnew)
+  rtnew$created_at <- as.POSIXct(rtnew$created_at)
+
+  p <- ggplot(rtnew, aes(x=created_at, y=Count)) + geom_line() + xlab("") + theme_dark()
+  p <- ggplotly(p)
+  p
+})
+
+
+```
+

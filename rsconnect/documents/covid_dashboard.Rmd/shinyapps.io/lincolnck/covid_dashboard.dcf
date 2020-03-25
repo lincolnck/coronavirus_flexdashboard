@@ -1,0 +1,12 @@
+name: covid_dashboard
+title: covid_dashboard
+username:
+account: lincolnck
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 1985429
+bundleId: 2924009
+url: https://lincolnck.shinyapps.io/covid_dashboard/
+when: 1585162339.1997
+asMultiple: FALSE
+asStatic: FALSE
