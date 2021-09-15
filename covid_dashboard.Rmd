@@ -11,6 +11,8 @@ runtime: shiny
 ```{r setup, include=FALSE, echo=FALSE, warning=FALSE}
 library(flexdashboard)
 library(leaflet)
+library(shiny)
+library(tibble)
 library(rgdal)
 library(readr)
 library(dplyr)
@@ -31,11 +33,11 @@ radioButtons("rangeornot", "Date Range or To Date:",
                c("Date Range", "To Date"))
 conditionalPanel(
   condition = "input.rangeornot == 'Date Range'",
-  dateRangeInput("daterange", "Date Range:", format = "mm/dd/yy", start = "2020-01-22")
+  dateRangeInput("daterange", "Date Range:", format = "mm/dd/yy", start = "2020-01-22", end=Sys.Date()-1, max=Sys.Date()-1)
 )
 conditionalPanel(
   condition = "input.rangeornot == 'To Date'",
-  dateInput("todate", "To Date:", format = "mm/dd/yy")
+  dateInput("todate", "To Date:", format = "mm/dd/yy", value=Sys.Date()-1, max=Sys.Date()-1)
 )
 
 radioButtons("casesordeaths", "Display Cases or Deaths:",
@@ -43,14 +45,14 @@ radioButtons("casesordeaths", "Display Cases or Deaths:",
 
 conditionalPanel(
   condition = "input.casesordeaths == 'Cases'",
-  radioButtons("totalorpercent", "Display Totals or Percentages:",
-             c("Total", "Percentage of Population"), selected = "Total")
+  radioButtons("totalorpercent", "Display Totals, New or Percentages:",
+             c("Total", "New", "Percentage of Population"), selected = "Total")
 )
 
 conditionalPanel(
   condition = "input.casesordeaths == 'Deaths'",
-  radioButtons("totalorpercentofcases", "Display Totals or Percentages:",
-             c("Total", "Percentage of Cases", "Percentage of Population"), selected = "Total")
+  radioButtons("totalorpercentofcases", "Display Totals, New or Percentages:",
+             c("Total", "New", "Percentage of Cases", "Percentage of Population"), selected = "Total")
 )
 
 checkboxGroupInput("stockindex", "Indices to show:",
@@ -101,7 +103,7 @@ Row
 
 ```{r, echo=FALSE, warning=FALSE, message=FALSE}
 
-renderLeaflet({
+
   covid_cases <- read_csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv")
   
   # https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv
@@ -162,6 +164,8 @@ renderLeaflet({
     country_name = ADMIN
   ) -> countries
   
+output$map <- renderLeaflet({
+  
   if(input$rangeornot == "Date Range"){
   initial.date <- input$daterange[1]
   initial.date <- gsub("0(\\d)", "\\1", format(initial.date, "%m/%d/%y"))
@@ -196,24 +200,145 @@ renderLeaflet({
   
   
   if (input$casesordeaths == "Cases"){
-    if (input$totalorpercent == "Total"){
-      map <- tm_shape(map_and_cases) + tm_polygons("Cases", id="country_name")
+    if (input$totalorpercent == "Total" || input$totalorpercent == "New"){
+      pal <- colorBin(
+        palette = "viridis", domain = map_and_cases$Cases,
+        bins = seq(0, max(map_and_cases$Cases, na.rm = TRUE) + 10000000, by = 10000000)
+      )
+      leaflet(map_and_cases) %>%
+        addTiles() %>%
+        setView(lng = 0, lat = 30, zoom = 2) %>%
+        addPolygons(data = map_and_cases, fillColor = ~pal(Cases), color="white", fillOpacity = 0.7, label =~country_name, layerId=map_and_cases$country_name) %>% leaflet::addLegend(pal = pal, values = ~Cases, opacity = 0.7, title = "Total Cases")
     } else {
-      map <- tm_shape(map_and_cases) + tm_polygons("Percent of Population", id="country_name")
+      pal <- colorBin(
+        palette = "viridis", domain = map_and_cases$`Percent of Population`,
+        bins = seq(0, max(map_and_cases$`Percent of Population`, na.rm = TRUE) + 5, by = 5)
+      )
+      leaflet(map_and_cases) %>%
+        addTiles() %>%
+        setView(lng = 0, lat = 30, zoom = 2) %>%
+        addPolygons(data = map_and_cases, fillColor = ~pal(`Percent of Population`), color="white", fillOpacity = 0.7, label =~country_name, layerId=map_and_cases$country_name) %>% leaflet::addLegend(pal = pal, values = ~`Percent of Population`,
+        opacity = 0.7, title = "Percent of Population"
+      )
+    }
+  } else {
+    if (input$totalorpercentofcases == "Total" || input$totalorpercentofcases == "New"){
+      pal <- colorBin(
+        palette = "viridis", domain = map_and_deaths$Deaths,
+        bins = seq(0, max(map_and_deaths$Deaths, na.rm = TRUE) + 100000, by = 100000)
+      )
+      leaflet(map_and_deaths) %>%
+        addTiles() %>%
+        setView(lng = 0, lat = 30, zoom = 2) %>%
+        addPolygons(data = map_and_deaths, fillColor = ~pal(Deaths), color="white", fillOpacity = 0.7, label =~country_name, layerId=map_and_cases$country_name) %>% leaflet::addLegend(pal = pal, values = ~Deaths,
+        opacity = 0.7, title = "Total Deaths"
+      )
+    } else if (input$totalorpercentofcases == "Percentage of Population") {
+      pal <- colorBin(
+        palette = "viridis", domain = map_and_deaths$`Percent of Population`,
+        bins = seq(0, max(map_and_deaths$`Percent of Population`, na.rm = TRUE) + 0.1, by = 0.1)
+      )
+      leaflet(map_and_deaths) %>%
+        addTiles() %>%
+        setView(lng = 0, lat = 30, zoom = 2) %>%
+        addPolygons(data = map_and_deaths, fillColor = ~pal(`Percent of Population`), color="white", fillOpacity = 0.7, label =~country_name, layerId=map_and_cases$country_name) %>% leaflet::addLegend(pal = pal, values = ~`Percent of Population`, opacity = 0.7, title = "Percent of Population"
+      )
+    } else {
+      pal <- colorBin(
+        palette = "viridis", domain = map_and_deaths$`Percent of Cases`,
+        bins = seq(0, max(map_and_deaths$`Percent of Cases`, na.rm = TRUE) + 1, by = 5)
+      )
+      leaflet(map_and_deaths) %>%
+        addTiles() %>%
+        setView(lng = 0, lat = 30, zoom = 2) %>%
+        addPolygons(data = map_and_deaths, fillColor = ~pal(`Percent of Cases`), color="white", 
+                    fillOpacity = 0.7, 
+                    label =~country_name, 
+                    layerId=map_and_cases$country_name) %>% 
+        leaflet::addLegend(pal = pal, values = ~`Percent of Cases`,
+        opacity = 0.7, title = "Percent of Cases"
+      )
+    }
+  }
+
+  # tmap_leaflet(map)
+  
+  
+})
+
+leafletOutput('map')
+```
+
+### Time Series
+
+```{r}
+
+click_marker <- eventReactive(input$map_shape_click, {
+  x <- input$map_shape_click
+  print(x)
+  return(x$id)
+})
+
+data_for_cases <- reactive({
+  return(cases_totals[cases_totals$country_name == click_marker(),])
+})
+
+data_for_deaths <- reactive({
+  return(deaths_totals[deaths_totals$country_name == click_marker(),])
+})
+
+renderPlotly({
+  
+  cases_totals_test <- column_to_rownames(data_for_cases(), var="country_name")
+  deaths_totals_test <- column_to_rownames(data_for_deaths(), var="country_name")
+  t_cases_totals <- as.data.frame(t(as.matrix(cases_totals_test)))
+  t_deaths_totals <- as.data.frame(t(as.matrix(deaths_totals_test)))
+  
+  if(input$rangeornot == "Date Range"){
+  first.date <- input$daterange[1]
+  last.date <- input$daterange[2]
+  } else {
+  first.date <- as.Date("2020-01-22", format="%Y-%m-%d")
+  last.date <- input$todate
+  }
+  
+  
+  cases_test <- rownames_to_column(t_cases_totals, var="date")
+  cases_test$date <- as.Date.character(cases_test$date, format="%m/%d/%y")
+  deaths_test <- rownames_to_column(t_deaths_totals, var="date")
+  deaths_test$date <- as.Date.character(deaths_test$date, format="%m/%d/%y")
+  
+  cases <- cases_test[cases_test$date %in% first.date:last.date,]
+  deaths <- deaths_test[deaths_test$date %in% first.date:last.date,]
+  
+  cases2 <- cases %>% 
+    mutate(diff = cases[,2] - lag(cases[,2], default = first(cases[,2])))
+  deaths2 <- deaths %>%
+    mutate(diff = deaths[,2] - lag(deaths[,2], default = first(deaths[,2])))
+  
+  if (input$casesordeaths == "Cases"){
+    if (input$totalorpercent == "Total"){
+      p <- ggplot(cases2, aes(x=date, y = cases2[,2])) + geom_line() + ylab("Total Cases") + xlab("") + scale_x_date() +  theme_dark() + scale_y_continuous(labels=scales::comma)
+    } else if (input$totalorpercent == "New"){
+      p <- ggplot(cases2, aes(x=date, y = cases2[,3])) + geom_line() + ylab("New Cases") + xlab("") + scale_x_date() +  theme_dark() + scale_y_continuous(labels=scales::comma)
+    } else {
+      p <- ggplot(cases, aes(x=date, y = (cases[,2]/countries$POP_EST[countries$country_name==click_marker()])*100)) + geom_line() + ylab("Cases as a Percent of Population") + xlab("") + scale_x_date() +  theme_dark()+ scale_y_continuous(labels=scales::comma)
     }
   } else {
     if (input$totalorpercentofcases == "Total"){
-      map <- tm_shape(map_and_deaths) + tm_polygons("Deaths", id="country_name")
+      p <- ggplot(deaths, aes(x=date, y = deaths[,2])) + geom_line() + ylab("Total Deaths") + xlab("") + scale_x_date() +  theme_dark()+ scale_y_continuous(labels=scales::comma)
+    } else if (input$totalorpercentofcases == "New"){
+      p <- ggplot(deaths2, aes(x=date, y = deaths2[,3])) + geom_line() + ylab("New Deaths") + xlab("") + scale_x_date() +  theme_dark()+ scale_y_continuous(labels=scales::comma)
     } else if (input$totalorpercentofcases == "Percentage of Population") {
-      map <- tm_shape(map_and_deaths) + tm_polygons("Percent of Population", id="country_name")
+      p <- ggplot(deaths, aes(x=date, y = (deaths[,2]/countries$POP_EST[countries$country_name==click_marker()])*100)) + geom_line() + ylab("Deaths as a Percent of Population") + xlab("") + scale_x_date() +  theme_dark()+ scale_y_continuous(labels=scales::comma)
     } else {
-      map <- tm_shape(map_and_deaths) + tm_polygons("Percent of Cases", id="country_name")
+      p <- ggplot(deaths, aes(x=date, y = (deaths[,2]/cases[,2])*100)) + geom_line() + ylab("Deaths as a Percent of Cases") + xlab("") + scale_x_date() +  theme_dark()+ scale_y_continuous(labels=scales::comma)
     }
   }
-  
-  tmap_leaflet(map)
-})
 
+  p <- ggplotly(p)
+  p
+})
 
 ```
 
@@ -224,6 +349,7 @@ Row
 
 ```{r}
 renderPlotly({
+  
   if(input$rangeornot == "Date Range"){
   first.date <- input$daterange[1]
   last.date <- input$daterange[2]
@@ -243,9 +369,91 @@ renderPlotly({
   p <- ggplot(tickerdf, aes(x = ref.date, y = price.close, col=ticker)) + geom_line() + ylab("Closing Price") + xlab("Date") + scale_color_discrete(name="Index Symbol") + theme_dark()
   p <- ggplotly(p)
   p
-})
 
+})
 ```
+
+<!-- Row -->
+<!-- ----------------------------------------------------------------------- -->
+<!-- ### LAGGED CROSS-CORRELATION -->
+
+<!-- ```{r} -->
+<!-- renderPlotly({ -->
+<!--   cases_totals_test <- column_to_rownames(data_for_cases(), var="country_name") -->
+<!--   deaths_totals_test <- column_to_rownames(data_for_deaths(), var="country_name") -->
+<!--   t_cases_totals <- as.data.frame(t(as.matrix(cases_totals_test))) -->
+<!--   t_deaths_totals <- as.data.frame(t(as.matrix(deaths_totals_test))) -->
+
+<!--   if(input$rangeornot == "Date Range"){ -->
+<!--   first.date <- input$daterange[1] -->
+<!--   last.date <- input$daterange[2] -->
+<!--   } else { -->
+<!--   first.date <- as.Date("2020-01-22", format="%Y-%m-%d") -->
+<!--   last.date <- input$todate -->
+<!--   } -->
+
+<!--   cases_test <- rownames_to_column(t_cases_totals, var="date") -->
+<!--   cases_test$date <- as.Date.character(cases_test$date, format="%m/%d/%y") -->
+<!--   deaths_test <- rownames_to_column(t_deaths_totals, var="date") -->
+<!--   deaths_test$date <- as.Date.character(deaths_test$date, format="%m/%d/%y") -->
+
+<!--   cases <- cases_test[cases_test$date %in% first.date:last.date,] -->
+<!--   deaths <- deaths_test[deaths_test$date %in% first.date:last.date,] -->
+
+<!--   cases2 <- cases %>%  -->
+<!--     mutate(diff = cases[,2] - lag(cases[,2], default = first(cases[,2]))) -->
+<!--   deaths2 <- deaths %>% -->
+<!--     mutate(diff = deaths[,2] - lag(deaths[,2], default = first(deaths[,2]))) -->
+<!--   if(input$rangeornot == "Date Range"){ -->
+<!--   first.date <- input$daterange[1] -->
+<!--   last.date <- input$daterange[2] -->
+<!--   } else { -->
+<!--   first.date <- as.Date("2020-01-22", format="%Y-%m-%d") -->
+<!--   last.date <- input$todate -->
+<!--   } -->
+<!--   freq.data <- 'daily' -->
+<!--   tickers <- c('^GSPC','^FTSE', '^N225', '^DJI', '^IXIC', '^SZSC1') -->
+<!--   l.out <- BatchGetSymbols(tickers = tickers, -->
+<!--                          first.date = first.date, -->
+<!--                          last.date = last.date, -->
+<!--                          freq.data = freq.data -->
+<!--                          ) -->
+<!--   selections <- input$stockindex -->
+<!--   tickerdf <- subset(l.out$df.tickers, ticker == selections) -->
+
+<!--   if (input$casesordeaths == "Cases"){ -->
+<!--     if (input$totalorpercent == "Total" || input$totalorpercent == "Percentage of Population"){ -->
+<!--       print(ccf(cases2[,2],tickerdf$price.close)) -->
+
+<!--       p <- ggplot(cases2, aes(x=date, y = cases2[,2])) + geom_line() + ylab("Total Cases") + xlab("") + scale_x_date() +  theme_dark() + scale_y_continuous(labels=scales::comma) -->
+
+<!--     } else { -->
+<!--       print(ccf(cases2[,3],tickerdf$price.close)) -->
+
+<!--       p <- ggplot(cases2, aes(x=date, y = cases2[,3])) + geom_line() + ylab("New Cases") + xlab("") + scale_x_date() +  theme_dark() + scale_y_continuous(labels=scales::comma) -->
+<!--     } -->
+<!--   } else { -->
+<!--     if (input$totalorpercentofcases == "Total" || input$totalorpercentofcases == "Percentage of Population" || input$totalorpercentofcases == "Percentage of Cases"){ -->
+<!--       print(ccf(deaths2[,2],tickerdf$price.close)) -->
+
+<!--       p <- ggplot(deaths2, aes(x=date, y = deaths2[,2])) + geom_line() + ylab("Total Deaths") + xlab("") + scale_x_date() +  theme_dark() + scale_y_continuous(labels=scales::comma) -->
+
+<!--     } else { -->
+<!--       print(ccf(deaths2[,3],tickerdf$price.close)) -->
+
+<!--       p <- ggplot(deaths2,aes(x=date)) + geom_line(aes(y = deaths2[,3])) + geom_line(aes(y = tickerdf$price.close)) -->
+<!--         # ylab("New Deaths") + xlab("") +  -->
+<!--         # scale_x_date() +   -->
+<!--         # theme_dark()  -->
+<!--         # scale_y_continuous(labels=scales::comma) -->
+<!--     } -->
+<!--   } -->
+
+<!--     # p <- ggplot(tickerdf, aes(x = ref.date, y = price.close, col=ticker)) + geom_line() + ylab("Closing Price") + xlab("Date") + scale_color_discrete(name="Index Symbol") + theme_dark() -->
+<!--   p <- ggplotly(p) -->
+<!--   p -->
+<!--   }) -->
+<!-- ``` -->
 
 Row
 -----------------------------------------------------------------------
